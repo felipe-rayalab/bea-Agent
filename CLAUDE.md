@@ -4,8 +4,8 @@ Agente de trading autónomo que opera en mercados estadounidenses usando Claude 
 
 ## Fase actual
 
-**Paper trading — semana 1.** Migrar a live en semana 2 si los resultados son satisfactorios.
-Para pasar a live: cambiar `ALPACA_BASE_URL` y `PAPER_TRADING` en la rutina (ver abajo).
+**Paper trading — semana 1.** Primer ciclo ejecutado el 2026-05-08 con 3 posiciones (AMD, TSLA, NVDA).
+Migrar a live en semana 2 si los resultados son satisfactorios.
 
 ## Links clave
 
@@ -17,41 +17,56 @@ Para pasar a live: cambiar `ALPACA_BASE_URL` y `PAPER_TRADING` en la rutina (ver
 
 ## Stack
 
-- **Brain**: Claude Opus 4.7 vía Anthropic SDK (agentic loop, 20 herramientas)
-- **Broker**: Alpaca Markets (alpaca-py)
-- **Datos real-time**: Polygon.io
-- **Noticias / SEC / Insiders**: Financial Datasets API
-- **Earnings calendar**: EODHD API
+- **Brain**: Claude Opus 4.7 vía Anthropic SDK (agentic loop, 20+ herramientas)
+- **Broker**: Alpaca Markets (alpaca-py) — paper + live
+- **Datos real-time**: Yahoo Finance via `yfinance` (gratis, sin API key)
+- **Quotes exactos + históricos**: Alpaca Data API (incluido con la cuenta)
+- **Noticias / SEC / Insiders**: Financial Datasets API (free tier)
 - **Dashboard**: Next.js 14 + Vercel (`web/`)
-- **Trade journal**: Upstash Redis (persiste entre sesiones)
+- **Trade journal**: Upstash Redis (persiste entre sesiones CCR)
 - **Scheduler autónomo**: Rutina Anthropic Cloud, `0 8-23 * * 1-5` UTC = cada hora 4am–7pm ET
+
+## Fuentes de datos
+
+| Fuente | Qué provee | API Key |
+|--------|-----------|---------|
+| Alpaca Data API | Quotes real-time, OHLCV histórico | Misma key del broker |
+| Yahoo Finance (yfinance) | Movers, snapshots, earnings calendar, analyst ratings | No requiere |
+| Financial Datasets | Noticias con sentiment, SEC filings, insider trades | Sí (free tier) |
+
+> Polygon.io y EODHD fueron removidos — sus free tiers no incluyen snapshots ni earnings calendar.
+
+## Compatibilidad
+
+**Python 3.9+** — el código usa `if/elif` en lugar de `match/case`, y `Optional[T]` en lugar de `T | None`.
+`load_dotenv()` se llama al inicio de `agent/main.py` para cargar el `.env` antes de cualquier import.
 
 ## Estructura del proyecto
 
 ```
 bea_agent/
 ├── agent/
-│   ├── main.py        # Agentic loop — punto de entrada
+│   ├── main.py        # Agentic loop — punto de entrada (load_dotenv al top)
 │   ├── prompts.py     # System prompt del agente trader
-│   ├── tools.py       # 20 herramientas disponibles para Claude
+│   ├── tools.py       # 20+ herramientas (if/elif, Python 3.9 compatible)
 │   └── risk.py        # Stop-losses automáticos pre-ciclo
 ├── broker/
-│   └── alpaca_client.py   # Wrapper Alpaca REST API + extended hours
+│   └── alpaca_client.py   # Wrapper Alpaca REST API + extended hours support
 ├── data/
-│   ├── market.py      # Polygon.io (movers, snapshots, analyst ratings)
-│   ├── news.py        # Financial Datasets + EODHD (noticias, earnings, SEC)
+│   ├── market.py      # Yahoo Finance: movers, snapshots, analyst ratings
+│   ├── news.py        # Financial Datasets (noticias) + yfinance (earnings)
 │   └── portfolio.py   # Trade journal local + POST a Vercel dashboard
 ├── web/               # Dashboard Next.js (deployado en Vercel)
 │   ├── app/
-│   │   ├── page.tsx               # UI principal
+│   │   ├── page.tsx               # UI principal (dark theme, auto-refresh 30s)
 │   │   ├── api/portfolio/route.ts # Proxy Alpaca API
 │   │   └── api/trades/route.ts    # Trade journal (Upstash Redis)
 │   └── package.json
 ├── dashboard/         # Dashboard local FastAPI (alternativa offline)
 ├── journal/
 │   └── trades.json    # Log local (no persiste en CCR)
-├── scheduler.py       # APScheduler local (alternativa al cloud)
-└── .env               # API keys (nunca commitear)
+├── scheduler.py       # APScheduler local (cada 15 min, 4am–8pm ET)
+└── .env               # API keys (nunca commitear — está en .gitignore)
 ```
 
 ## Variables de entorno (.env)
@@ -61,9 +76,7 @@ ANTHROPIC_API_KEY=
 ALPACA_API_KEY=                    # empieza con PK...
 ALPACA_SECRET_KEY=
 ALPACA_BASE_URL=https://paper-api.alpaca.markets   # → https://api.alpaca.markets para live
-POLYGON_API_KEY=
-FINANCIAL_DATASETS_API_KEY=
-EODHD_API_KEY=
+FINANCIAL_DATASETS_API_KEY=        # free tier, para noticias y SEC
 VERCEL_API_URL=https://bea-agent.vercel.app
 TRADES_API_SECRET=bea-secret-2026
 CAPITAL_TOTAL=1500.0
@@ -73,6 +86,8 @@ MAX_OPEN_POSITIONS=3
 CRYPTO_ALLOCATION_PCT=0.40
 PAPER_TRADING=true
 ```
+
+> `POLYGON_API_KEY` y `EODHD_API_KEY` ya no son necesarios.
 
 ## Variables de entorno Vercel (web/)
 
@@ -88,17 +103,18 @@ UPSTASH_REDIS_REST_TOKEN=
 ## Cómo correr localmente
 
 ```bash
-python -m venv venv && source venv/bin/activate
+cd ~/Documents/bea_agent
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
 # Un ciclo manual
-python agent/main.py
+python3 -m agent.main
 
 # Scheduler local (cada 15 min, 4am–8pm ET)
-python scheduler.py
+python3 scheduler.py
 
 # Dashboard local
-python dashboard/app.py   # → http://localhost:8000
+python3 dashboard/app.py   # → http://localhost:8000
 ```
 
 ## Estrategia de trading
@@ -130,31 +146,44 @@ Momentum + event-driven:
 ## Pasar a live trading
 
 1. Depositar $1500 en Alpaca live account (app.alpaca.markets)
-2. En la rutina `trig_01KRkEEVAMzF3upuZenRBM5M`, cambiar en el .env del prompt:
+2. En la rutina `trig_01KRkEEVAMzF3upuZenRBM5M`, actualizar el .env del prompt:
    ```
    ALPACA_BASE_URL=https://api.alpaca.markets
    PAPER_TRADING=false
    ```
-3. Actualizar también las variables en Vercel (dashboard)
+3. Actualizar `ALPACA_BASE_URL` también en las variables de entorno de Vercel
 4. Validar con una orden pequeña antes de activar completamente
 
 ## Arquitectura de la rutina autónoma
 
 ```
-Anthropic Cloud (cada hora, 4am–7pm ET)
-  → Clona github.com/felipe-rayalab/bea-Agent
+Anthropic Cloud (cada hora, 4am–7pm ET, lun–vie)
+  → Clona github.com/felipe-rayalab/bea-Agent (GitHub autorizado)
   → pip install -r requirements.txt
   → Crea .env con API keys
-  → python agent/main.py
-      → RiskGuard: enforce stop-losses
+  → python3 -m agent.main
+      → load_dotenv() carga el .env
+      → RiskGuard: enforce stop-losses pre-ciclo
       → Claude Opus 4.7: research → decide → execute
-      → Alpaca API: place orders
-      → POST /api/trades → Vercel → Upstash Redis
+          → yfinance: movers, snapshots, earnings
+          → Alpaca Data: quotes exactos, OHLCV
+          → Financial Datasets: noticias, SEC
+          → Alpaca Trading: place orders
+      → POST cycle summary → Vercel → Upstash Redis
       → Dashboard actualizado en https://bea-agent.vercel.app
 ```
 
+## Primer ciclo (2026-05-08)
+
+- AMD: 65 shares @ $438.43
+- TSLA: 65 shares @ $429.25
+- NVDA: 130 shares @ $215.88
+- Portfolio: $100,017 (+$17) | Cash: $15,536 | Deployed: 84.5%
+- Razonamiento: momentum tape, AMD post-earnings continuation, TSLA uptrend, NVDA breakout
+
 ## Notas importantes
 
-- El `trades.json` local **no persiste** entre sesiones CCR. El razonamiento sí persiste en Upstash Redis.
+- El `trades.json` local **no persiste** entre sesiones CCR. El razonamiento persiste en Upstash Redis.
 - El estado real del portfolio siempre vive en Alpaca — el agente lo lee al inicio de cada ciclo.
-- **Rotar API keys** después de la primera semana (quedaron expuestas en el historial del chat).
+- **Rotar API keys** — quedaron expuestas en el historial del chat. Hacerlo después de la semana 1.
+- La rutina puede dar "prompt injection" warnings — es Claude siendo cauteloso. El mensaje está diseñado para dejar claro que es una rutina autorizada.
