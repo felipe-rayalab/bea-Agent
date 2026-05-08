@@ -208,59 +208,57 @@ TOOL_DEFINITIONS = [
 def dispatch_tool(name: str, inputs: dict) -> str:
     client = get_client()
 
-    match name:
-        case "get_account":
-            return str(client.get_account())
-        case "get_positions":
-            return str(client.get_positions())
-        case "get_open_orders":
-            return str(client.get_open_orders())
-        case "is_market_open":
-            return str(client.is_market_open())
-        case "get_market_session":
-            return str(client.get_market_session())
-        case "get_market_movers":
-            direction = inputs.get("direction", "gainers")
-            return str(market.get_market_movers(direction))
-        case "get_ticker_snapshot":
-            return str(market.get_ticker_snapshot(inputs["symbol"]))
-        case "get_ticker_details":
-            return str(market.get_ticker_details(inputs["symbol"]))
-        case "get_analyst_ratings":
-            return str(market.get_analyst_ratings(inputs["symbol"]))
-        case "get_recent_bars":
-            return str(client.get_recent_bars(inputs["symbol"], inputs.get("days", 10)))
-        case "get_latest_quote":
-            return str(client.get_latest_quote(inputs["symbol"]))
-        case "get_company_news":
-            return str(news.get_company_news(inputs["symbol"], inputs.get("days", 3)))
-        case "get_market_news":
-            return str(news.get_market_news(inputs.get("limit", 15)))
-        case "get_earnings_calendar":
-            return str(news.get_earnings_calendar(inputs.get("days_ahead", 7)))
-        case "get_sec_filings":
-            return str(news.get_sec_filings(inputs["symbol"], inputs.get("limit", 5)))
-        case "get_insider_trades":
-            return str(news.get_insider_trades(inputs["symbol"], inputs.get("limit", 10)))
-        case "place_market_order":
-            return str(client.place_market_order(inputs["symbol"], inputs["qty"], inputs["side"]))
-        case "place_limit_order":
-            return str(client.place_limit_order(
-                inputs["symbol"], inputs["qty"], inputs["side"], inputs["limit_price"]
-            ))
-        case "close_position":
-            return str(client.close_position(inputs["symbol"]))
-        case "log_trade":
-            acct = client.get_account()
-            portfolio.log_trade(
-                action=inputs["action"],
-                symbol=inputs["symbol"],
-                qty=inputs["qty"],
-                price=inputs["price"],
-                reasoning=inputs["reasoning"],
-                order_result=inputs["order_result"],
-                portfolio_snapshot=acct,
-            )
-            return "Trade logged successfully."
-        case _:
-            return f"Unknown tool: {name}"
+    if name == "get_account":
+        return str(client.get_account())
+    elif name == "get_positions":
+        return str(client.get_positions())
+    elif name == "get_open_orders":
+        return str(client.get_open_orders())
+    elif name == "is_market_open":
+        return str(client.is_market_open())
+    elif name == "get_market_session":
+        return str(client.get_market_session())
+    elif name == "get_market_movers":
+        return str(market.get_market_movers(inputs.get("direction", "gainers")))
+    elif name == "get_ticker_snapshot":
+        return str(market.get_ticker_snapshot(inputs["symbol"]))
+    elif name == "get_ticker_details":
+        return str(market.get_ticker_details(inputs["symbol"]))
+    elif name == "get_analyst_ratings":
+        return str(market.get_analyst_ratings(inputs["symbol"]))
+    elif name == "get_recent_bars":
+        return str(client.get_recent_bars(inputs["symbol"], inputs.get("days", 10)))
+    elif name == "get_latest_quote":
+        return str(client.get_latest_quote(inputs["symbol"]))
+    elif name == "get_company_news":
+        return str(news.get_company_news(inputs["symbol"], inputs.get("days", 3)))
+    elif name == "get_market_news":
+        return str(news.get_market_news(inputs.get("limit", 15)))
+    elif name == "get_earnings_calendar":
+        return str(news.get_earnings_calendar(inputs.get("days_ahead", 7)))
+    elif name == "get_sec_filings":
+        return str(news.get_sec_filings(inputs["symbol"], inputs.get("limit", 5)))
+    elif name == "get_insider_trades":
+        return str(news.get_insider_trades(inputs["symbol"], inputs.get("limit", 10)))
+    elif name == "place_market_order":
+        return str(client.place_market_order(inputs["symbol"], inputs["qty"], inputs["side"]))
+    elif name == "place_limit_order":
+        return str(client.place_limit_order(
+            inputs["symbol"], inputs["qty"], inputs["side"], inputs["limit_price"]
+        ))
+    elif name == "close_position":
+        return str(client.close_position(inputs["symbol"]))
+    elif name == "log_trade":
+        acct = client.get_account()
+        portfolio.log_trade(
+            action=inputs["action"],
+            symbol=inputs["symbol"],
+            qty=inputs["qty"],
+            price=inputs["price"],
+            reasoning=inputs["reasoning"],
+            order_result=inputs["order_result"],
+            portfolio_snapshot=acct,
+        )
+        return "Trade logged successfully."
+    else:
+        return f"Unknown tool: {name}"
