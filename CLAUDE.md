@@ -1,37 +1,55 @@
 # BEA Trading Agent
 
-Agente de trading autónomo que opera en mercados estadounidenses usando Claude Opus 4.7 como cerebro. Capital inicial: $1500. Horizonte: 30 días. Estrategia: agresiva.
+Agente de trading autónomo que opera en mercados estadounidenses usando Claude Opus 4.7 como cerebro. Capital: $1500. Horizonte: 30 días. Estrategia: agresiva.
+
+## Fase actual
+
+**Paper trading — semana 1.** Migrar a live en semana 2 si los resultados son satisfactorios.
+Para pasar a live: cambiar `ALPACA_BASE_URL` y `PAPER_TRADING` en la rutina (ver abajo).
+
+## Links clave
+
+| Recurso | URL |
+|---------|-----|
+| Dashboard público | https://bea-agent.vercel.app |
+| Rutina autónoma | https://claude.ai/code/routines/trig_01KRkEEVAMzF3upuZenRBM5M |
+| Repo GitHub | https://github.com/felipe-rayalab/bea-Agent |
 
 ## Stack
 
-- **Brain**: Claude Opus 4.7 vía Anthropic SDK (agentic loop)
-- **Broker**: Alpaca Markets (paper + live trading)
-- **Datos real-time**: Polygon.io (precios, movers, snapshots)
-- **Noticias/SEC/Insiders**: Financial Datasets API
+- **Brain**: Claude Opus 4.7 vía Anthropic SDK (agentic loop, 20 herramientas)
+- **Broker**: Alpaca Markets (alpaca-py)
+- **Datos real-time**: Polygon.io
+- **Noticias / SEC / Insiders**: Financial Datasets API
 - **Earnings calendar**: EODHD API
-- **Dashboard**: FastAPI + HTML en localhost:8000
-- **Scheduler autónomo**: Rutina en Anthropic Cloud (`trig_01KRkEEVAMzF3upuZenRBM5M`), cada hora lun–vie 9am–4pm ET
+- **Dashboard**: Next.js 14 + Vercel (`web/`)
+- **Trade journal**: Upstash Redis (persiste entre sesiones)
+- **Scheduler autónomo**: Rutina Anthropic Cloud, `0 8-23 * * 1-5` UTC = cada hora 4am–7pm ET
 
-## Estructura
+## Estructura del proyecto
 
 ```
 bea_agent/
 ├── agent/
-│   ├── main.py        # Agentic loop principal — punto de entrada
+│   ├── main.py        # Agentic loop — punto de entrada
 │   ├── prompts.py     # System prompt del agente trader
 │   ├── tools.py       # 20 herramientas disponibles para Claude
 │   └── risk.py        # Stop-losses automáticos pre-ciclo
 ├── broker/
-│   └── alpaca_client.py   # Wrapper Alpaca REST API
+│   └── alpaca_client.py   # Wrapper Alpaca REST API + extended hours
 ├── data/
 │   ├── market.py      # Polygon.io (movers, snapshots, analyst ratings)
 │   ├── news.py        # Financial Datasets + EODHD (noticias, earnings, SEC)
-│   └── portfolio.py   # Trade journal (trades.json)
-├── dashboard/
-│   ├── app.py         # FastAPI server
-│   └── templates/index.html
+│   └── portfolio.py   # Trade journal local + POST a Vercel dashboard
+├── web/               # Dashboard Next.js (deployado en Vercel)
+│   ├── app/
+│   │   ├── page.tsx               # UI principal
+│   │   ├── api/portfolio/route.ts # Proxy Alpaca API
+│   │   └── api/trades/route.ts    # Trade journal (Upstash Redis)
+│   └── package.json
+├── dashboard/         # Dashboard local FastAPI (alternativa offline)
 ├── journal/
-│   └── trades.json    # Log de cada trade con razonamiento del agente
+│   └── trades.json    # Log local (no persiste en CCR)
 ├── scheduler.py       # APScheduler local (alternativa al cloud)
 └── .env               # API keys (nunca commitear)
 ```
@@ -40,83 +58,103 @@ bea_agent/
 
 ```
 ANTHROPIC_API_KEY=
-ALPACA_API_KEY=           # empieza con PK...
+ALPACA_API_KEY=                    # empieza con PK...
 ALPACA_SECRET_KEY=
-ALPACA_BASE_URL=https://paper-api.alpaca.markets   # cambiar a live cuando esté listo
+ALPACA_BASE_URL=https://paper-api.alpaca.markets   # → https://api.alpaca.markets para live
 POLYGON_API_KEY=
 FINANCIAL_DATASETS_API_KEY=
 EODHD_API_KEY=
+VERCEL_API_URL=https://bea-agent.vercel.app
+TRADES_API_SECRET=bea-secret-2026
 CAPITAL_TOTAL=1500.0
 MAX_POSITION_PCT=0.30
 STOP_LOSS_PCT=0.15
 MAX_OPEN_POSITIONS=3
-CRYPTO_ALLOCATION_PCT=0.20
+CRYPTO_ALLOCATION_PCT=0.40
 PAPER_TRADING=true
 ```
 
-## Cómo correr
+## Variables de entorno Vercel (web/)
 
-### Ciclo manual (una sola vez)
+```
+ALPACA_API_KEY=
+ALPACA_SECRET_KEY=
+ALPACA_BASE_URL=https://paper-api.alpaca.markets
+TRADES_API_SECRET=bea-secret-2026
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+```
+
+## Cómo correr localmente
+
 ```bash
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
+
+# Un ciclo manual
 python agent/main.py
-```
 
-### Dashboard
-```bash
-python dashboard/app.py
-# Abrir http://localhost:8000
-```
-
-### Scheduler local (alternativa al cloud)
-```bash
+# Scheduler local (cada 15 min, 4am–8pm ET)
 python scheduler.py
-# Corre cada 15 min, lun–vie 9:00–15:45 ET
+
+# Dashboard local
+python dashboard/app.py   # → http://localhost:8000
 ```
-
-## Rutina autónoma en Anthropic Cloud
-
-La rutina ya está creada y configurada:
-
-- **ID**: `trig_01KRkEEVAMzF3upuZenRBM5M`
-- **URL**: https://claude.ai/code/routines/trig_01KRkEEVAMzF3upuZenRBM5M
-- **Schedule**: cada hora, lun–vie 13:00–20:00 UTC (9am–4pm ET)
-- **Estado**: deshabilitada hasta que se configuren las API keys reales
-
-### Para activar la rutina
-1. Ir a https://claude.ai/code/routines
-2. Editar el prompt de `BEA-Trading-Agent`
-3. Reemplazar cada `REPLACE_WITH_*` con las API keys reales
-4. Habilitar la rutina (toggle ON)
 
 ## Estrategia de trading
 
-El agente sigue una estrategia **momentum + event-driven**:
+Momentum + event-driven:
 
 1. **Earnings plays** — entrar antes/después de earnings con alta convicción
 2. **News catalyst** — reaccionar a noticias de alto impacto en los primeros minutos
 3. **Pre-market movers** — stocks con >3% de ganancia pre-mercado y volumen alto
 4. **Rotación sectorial** — anticipar movimientos cuando un líder del sector reporta
-5. **Crypto** — hasta 20% en BTC/ETH para operar fuera de horario
+5. **Crypto 24/7** — hasta 40% en BTC/ETH/SOL para cobertura overnight y fines de semana
+
+## Sesiones de trading
+
+| Sesión | Horario ET | Tipo de orden |
+|--------|-----------|---------------|
+| Pre-market | 4am – 9:30am | Limit con extended_hours=True |
+| Regular | 9:30am – 4pm | Market orders (máxima liquidez) |
+| After-hours | 4pm – 8pm | Limit con extended_hours=True |
+| Overnight / finde | resto | Solo crypto (BTC, ETH, SOL) |
 
 ## Reglas de riesgo (hardcoded en agent/risk.py)
 
+- Stop-loss automático al -15% por posición
 - Máximo 30% del portfolio en una posición
-- Stop-loss automático al -15%
 - Máximo 3 posiciones abiertas simultáneamente
-- No operar en los últimos 30 min del mercado (después de 3:30pm ET)
+- Extended hours: market orders se convierten automáticamente a limit en mid±0.5%
 
 ## Pasar a live trading
 
-1. Depositar $1500 en Alpaca live account
-2. Cambiar en `.env`: `ALPACA_BASE_URL=https://api.alpaca.markets`
-3. Cambiar: `PAPER_TRADING=false`
-4. Actualizar la rutina en claude.ai con el nuevo `ALPACA_BASE_URL`
-5. Validar con una orden pequeña antes de activar el agente completamente
+1. Depositar $1500 en Alpaca live account (app.alpaca.markets)
+2. En la rutina `trig_01KRkEEVAMzF3upuZenRBM5M`, cambiar en el .env del prompt:
+   ```
+   ALPACA_BASE_URL=https://api.alpaca.markets
+   PAPER_TRADING=false
+   ```
+3. Actualizar también las variables en Vercel (dashboard)
+4. Validar con una orden pequeña antes de activar completamente
+
+## Arquitectura de la rutina autónoma
+
+```
+Anthropic Cloud (cada hora, 4am–7pm ET)
+  → Clona github.com/felipe-rayalab/bea-Agent
+  → pip install -r requirements.txt
+  → Crea .env con API keys
+  → python agent/main.py
+      → RiskGuard: enforce stop-losses
+      → Claude Opus 4.7: research → decide → execute
+      → Alpaca API: place orders
+      → POST /api/trades → Vercel → Upstash Redis
+      → Dashboard actualizado en https://bea-agent.vercel.app
+```
 
 ## Notas importantes
 
-- El `trades.json` **no persiste** entre ejecuciones de la rutina cloud (cada sesión es aislada). El estado real del portfolio vive en Alpaca.
-- Si se quiere acumular el historial de razonamiento, conectar un storage externo (Supabase, Google Sheets).
-- El dashboard local (`python dashboard/app.py`) sí muestra el estado de Alpaca en tiempo real.
+- El `trades.json` local **no persiste** entre sesiones CCR. El razonamiento sí persiste en Upstash Redis.
+- El estado real del portfolio siempre vive en Alpaca — el agente lo lee al inicio de cada ciclo.
+- **Rotar API keys** después de la primera semana (quedaron expuestas en el historial del chat).
