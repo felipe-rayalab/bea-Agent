@@ -1,7 +1,9 @@
+from __future__ import annotations
+from typing import Optional
 from broker.alpaca_client import AlpacaClient
 from data import market, news, portfolio
 
-_client: AlpacaClient | None = None
+_client: Optional[AlpacaClient] = None
 
 
 def get_client() -> AlpacaClient:
