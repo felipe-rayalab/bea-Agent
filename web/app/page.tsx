@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 
 type Portfolio = {
@@ -26,6 +26,35 @@ type LastCycle = {
   timestamp: string; reasoning: string
   actions_taken: any[]; portfolio_state: any
   session?: string
+}
+
+function getNextCycleTime(): Date {
+  // Cron: 0 8-23 * * 1-5 UTC — every hour from 8am to 11pm UTC, Mon–Fri
+  const now = new Date()
+  const next = new Date(now)
+  next.setUTCSeconds(0, 0)
+  next.setUTCMinutes(0)
+  next.setUTCHours(next.getUTCHours() + 1)
+
+  for (let i = 0; i < 200; i++) {
+    const h = next.getUTCHours()
+    const dow = next.getUTCDay() // 0=Sun, 6=Sat
+    if (dow >= 1 && dow <= 5 && h >= 8 && h <= 23) return next
+    next.setUTCHours(next.getUTCHours() + 1)
+  }
+  return next
+}
+
+function useCountdown(target: Date) {
+  const [diff, setDiff] = useState(Math.max(0, target.getTime() - Date.now()))
+  useEffect(() => {
+    const id = setInterval(() => setDiff(Math.max(0, target.getTime() - Date.now())), 1000)
+    return () => clearInterval(id)
+  }, [target])
+  const h = Math.floor(diff / 3_600_000)
+  const m = Math.floor((diff % 3_600_000) / 60_000)
+  const s = Math.floor((diff % 60_000) / 1_000)
+  return { h, m, s, diff }
 }
 
 function usd(n: number) {
@@ -104,6 +133,8 @@ export default function Dashboard() {
   const [lastCycle, setLastCycle] = useState<LastCycle | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
+  const [nextCycle] = useState<Date>(() => getNextCycleTime())
+  const countdown = useCountdown(nextCycle)
 
   const fetchData = useCallback(async () => {
     try {
@@ -145,6 +176,17 @@ export default function Dashboard() {
         <div className="ml-auto flex items-center gap-3">
           <Badge text="PAPER TRADING" variant="yellow" />
           <Badge text="ACTIVE" variant="green" />
+          <div className="flex items-center gap-2 bg-[#0d1117] border border-[#30363d] rounded-lg px-3 py-1.5">
+            <span className="text-xs text-gray-500">Next cycle</span>
+            <span className="text-xs font-bold text-blue-400 tabular-nums">
+              {countdown.diff === 0
+                ? 'Running...'
+                : `${String(countdown.h).padStart(2,'0')}:${String(countdown.m).padStart(2,'0')}:${String(countdown.s).padStart(2,'0')}`}
+            </span>
+            <span className="text-xs text-gray-600">
+              {nextCycle.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
           <span className="text-xs text-gray-600">
             Updated {lastRefresh.toLocaleTimeString()}
           </span>
