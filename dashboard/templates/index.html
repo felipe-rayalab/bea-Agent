@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BEA Trading Agent</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'SF Mono', 'Fira Code', monospace; background: #0d1117; color: #e6edf3; }
+  header { background: #161b22; padding: 16px 24px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 18px; color: #58a6ff; }
+  .badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .badge-green { background: #1a4731; color: #3fb950; }
+  .badge-red { background: #4a1c1c; color: #f85149; }
+  .badge-gray { background: #21262d; color: #8b949e; }
+  main { padding: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
+  .card h2 { font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
+  .metric { font-size: 28px; font-weight: 700; }
+  .metric-label { font-size: 12px; color: #8b949e; margin-top: 4px; }
+  .positive { color: #3fb950; }
+  .negative { color: #f85149; }
+  .neutral { color: #e6edf3; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { color: #8b949e; font-weight: 500; padding: 8px 4px; text-align: left; border-bottom: 1px solid #30363d; }
+  td { padding: 10px 4px; border-bottom: 1px solid #21262d; }
+  .trade-entry { margin-bottom: 12px; padding: 12px; background: #0d1117; border-radius: 6px; border-left: 3px solid #30363d; }
+  .trade-buy { border-left-color: #3fb950; }
+  .trade-sell { border-left-color: #f85149; }
+  .trade-meta { display: flex; gap: 12px; font-size: 12px; color: #8b949e; margin-bottom: 6px; }
+  .trade-reasoning { font-size: 12px; color: #c9d1d9; line-height: 1.5; }
+  #status-bar { background: #161b22; border-top: 1px solid #30363d; padding: 8px 24px; font-size: 12px; color: #8b949e; position: fixed; bottom: 0; width: 100%; }
+  .full-width { grid-column: 1 / -1; }
+  .scroll-box { max-height: 400px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BEA Trading Agent</h1>
+  <span id="market-badge" class="badge badge-gray">Market: checking...</span>
+  <span id="last-update" style="margin-left:auto; font-size:12px; color:#8b949e;"></span>
+</header>
+
+<main>
+  <div class="card">
+    <h2>Portfolio Value</h2>
+    <div class="metric neutral" id="portfolio-value">—</div>
+    <div class="metric-label">Total equity</div>
+  </div>
+
+  <div class="card">
+    <h2>Cash Available</h2>
+    <div class="metric neutral" id="cash">—</div>
+    <div class="metric-label">Buying power</div>
+  </div>
+
+  <div class="card">
+    <h2>Today's P&L</h2>
+    <div class="metric neutral" id="pnl-today">—</div>
+    <div class="metric-label">vs. yesterday close</div>
+  </div>
+
+  <div class="card">
+    <h2>Total Trades</h2>
+    <div class="metric neutral" id="total-trades">—</div>
+    <div class="metric-label" id="trade-detail">buys / sells</div>
+  </div>
+
+  <div class="card full-width">
+    <h2>Open Positions</h2>
+    <table id="positions-table">
+      <thead><tr><th>Symbol</th><th>Qty</th><th>Entry</th><th>Price</th><th>Market Value</th><th>Unrealized P&L</th></tr></thead>
+      <tbody id="positions-body"></tbody>
+    </table>
+  </div>
+
+  <div class="card full-width">
+    <h2>Trade Journal (last 20)</h2>
+    <div class="scroll-box" id="journal-list"></div>
+  </div>
+</main>
+
+<div id="status-bar">Refreshing every 15s…</div>
+
+<script>
+function fmt(n) {
+  if (n == null) return '—';
+  return (n >= 0 ? '+' : '') + n.toFixed(2);
+}
+function fmtUSD(n) {
+  if (n == null) return '—';
+  return '$' + n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function colorClass(n) {
+  if (n > 0) return 'positive';
+  if (n < 0) return 'negative';
+  return 'neutral';
+}
+
+async function refresh() {
+  try {
+    const [portRes, journalRes] = await Promise.all([
+      fetch('/api/portfolio'),
+      fetch('/api/journal'),
+    ]);
+    const port = await portRes.json();
+    const jrnl = await journalRes.json();
+    const acct = port.account;
+
+    // Market badge
+    const badge = document.getElementById('market-badge');
+    badge.textContent = port.market_open ? 'Market: OPEN' : 'Market: CLOSED';
+    badge.className = 'badge ' + (port.market_open ? 'badge-green' : 'badge-gray');
+
+    // Metrics
+    const pv = acct.portfolio_value;
+    const pnl = acct.pnl_today;
+    document.getElementById('portfolio-value').textContent = fmtUSD(pv);
+    document.getElementById('portfolio-value').className = 'metric ' + colorClass(pv - 1500);
+    document.getElementById('cash').textContent = fmtUSD(acct.cash);
+    const pnlEl = document.getElementById('pnl-today');
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + fmtUSD(pnl);
+    pnlEl.className = 'metric ' + colorClass(pnl);
+
+    // Trade stats
+    const s = jrnl.summary;
+    document.getElementById('total-trades').textContent = s.total_trades || 0;
+    document.getElementById('trade-detail').textContent = `${s.buys || 0} buys / ${s.sells || 0} sells`;
+
+    // Positions table
+    const tbody = document.getElementById('positions-body');
+    tbody.innerHTML = '';
+    if (port.positions.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="color:#8b949e; padding:16px 4px;">No open positions</td></tr>';
+    } else {
+      for (const p of port.positions) {
+        const plPct = (p.unrealized_plpc * 100).toFixed(2);
+        tbody.innerHTML += `<tr>
+          <td style="font-weight:600">${p.symbol}</td>
+          <td>${p.qty}</td>
+          <td>${fmtUSD(p.avg_entry_price)}</td>
+          <td>${fmtUSD(p.current_price)}</td>
+          <td>${fmtUSD(p.market_value)}</td>
+          <td class="${colorClass(p.unrealized_pl)}">${fmtUSD(p.unrealized_pl)} (${plPct}%)</td>
+        </tr>`;
+      }
+    }
+
+    // Journal
+    const container = document.getElementById('journal-list');
+    const trades = (jrnl.trades || []).slice().reverse().slice(0, 20);
+    if (trades.length === 0) {
+      container.innerHTML = '<p style="color:#8b949e; padding:12px;">No trades yet.</p>';
+    } else {
+      container.innerHTML = trades.map(t => {
+        const actionClass = t.action === 'buy' ? 'trade-buy' : 'trade-sell';
+        return `<div class="trade-entry ${actionClass}">
+          <div class="trade-meta">
+            <span style="font-weight:600; text-transform:uppercase; color:${t.action==='buy'?'#3fb950':'#f85149'}">${t.action}</span>
+            <span>${t.symbol}</span>
+            <span>${t.qty} shares @ ${fmtUSD(t.price)}</span>
+            <span>${new Date(t.timestamp + 'Z').toLocaleString()}</span>
+          </div>
+          <div class="trade-reasoning">${t.reasoning || '—'}</div>
+        </div>`;
+      }).join('');
+    }
+
+    document.getElementById('last-update').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+    document.getElementById('status-bar').textContent = 'Last refresh: ' + new Date().toLocaleTimeString() + ' — auto-refreshing every 15s';
+  } catch (e) {
+    document.getElementById('status-bar').textContent = 'Error: ' + e.message;
+  }
+}
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>
