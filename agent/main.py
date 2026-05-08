@@ -7,6 +7,7 @@ import pytz
 from agent.prompts import build_system_prompt
 from agent.tools import TOOL_DEFINITIONS, dispatch_tool, get_client
 from agent.risk import RiskGuard
+from data.portfolio import log_cycle_summary
 
 
 def run_trading_cycle() -> dict:
@@ -71,12 +72,23 @@ Be aggressive. Look for high-conviction setups.
 
         if response.stop_reason == "end_turn":
             print("[Agent] Cycle complete.")
-            # Extract final text
             final_text = next(
                 (b.text for b in response.content if hasattr(b, "text")),
                 "No summary provided."
             )
             print(f"\n[Agent Summary]\n{final_text}")
+            # Post cycle summary to Vercel dashboard
+            try:
+                acct = client.get_account()
+                session = client.get_market_session()
+                log_cycle_summary(
+                    reasoning=final_text,
+                    actions_taken=cycle_actions,
+                    portfolio_state=acct,
+                    session=session,
+                )
+            except Exception:
+                pass
             break
 
         if response.stop_reason == "tool_use":
