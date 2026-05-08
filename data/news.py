@@ -100,29 +100,32 @@ def get_insider_trades(symbol: str, limit: int = 10) -> list[dict]:
 
 
 def get_earnings_calendar(days_ahead: int = 7) -> list[dict]:
-    """Upcoming earnings releases from EODHD."""
-    from_date = datetime.utcnow().strftime("%Y-%m-%d")
-    to_date = (datetime.utcnow() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
-    r = httpx.get(
-        f"{EODHD_BASE}/calendar/earnings",
-        params={
-            "api_token": os.environ["EODHD_API_KEY"],
-            "fmt": "json",
-            "from": from_date,
-            "to": to_date,
-        },
-        timeout=15,
-    )
-    r.raise_for_status()
-    earnings = r.json().get("earnings", [])
-    return [
-        {
-            "symbol": e.get("code", "").replace(".US", ""),
-            "report_date": e.get("report_date"),
-            "estimate": e.get("estimate"),
-            "actual": e.get("actual"),
-            "difference": e.get("difference"),
-            "surprise_pct": e.get("percent"),
-        }
-        for e in earnings[:30]
+    """Upcoming earnings using Yahoo Finance — no API key required."""
+    import yfinance as yf
+    watchlist = [
+        "NVDA", "AMD", "TSLA", "META", "MSFT", "AAPL", "GOOGL", "AMZN",
+        "PLTR", "COIN", "AVGO", "ARM", "SMCI", "HOOD", "SHOP", "NET",
+        "CRWD", "SNOW", "DDOG", "MDB", "SOFI", "RBLX", "SQ", "MSTR"
     ]
+    results = []
+    cutoff = datetime.utcnow() + timedelta(days=days_ahead)
+    for symbol in watchlist:
+        try:
+            cal = yf.Ticker(symbol).calendar
+            if cal is None:
+                continue
+            date = cal.get("Earnings Date")
+            if date and len(date) > 0:
+                earnings_date = date[0]
+                if hasattr(earnings_date, 'to_pydatetime'):
+                    earnings_date = earnings_date.to_pydatetime()
+                if earnings_date.replace(tzinfo=None) <= cutoff:
+                    results.append({
+                        "symbol": symbol,
+                        "report_date": str(earnings_date.date()),
+                        "eps_estimate": cal.get("EPS Estimate"),
+                    })
+        except Exception:
+            continue
+    results.sort(key=lambda x: x["report_date"])
+    return results

@@ -1,90 +1,79 @@
-import os
-import httpx
+import yfinance as yf
 from datetime import datetime, timedelta
 import pytz
 
 
-POLYGON_BASE = "https://api.polygon.io"
-
-
-def _polygon(path: str, params: dict = {}) -> dict:
-    params["apiKey"] = os.environ["POLYGON_API_KEY"]
-    r = httpx.get(f"{POLYGON_BASE}{path}", params=params, timeout=15)
-    r.raise_for_status()
-    return r.json()
-
-
 def get_market_movers(direction: str = "gainers") -> list[dict]:
-    """Top gainers or losers for the day."""
-    data = _polygon(f"/v2/snapshot/locale/us/markets/stocks/{direction}")
-    tickers = data.get("tickers", [])[:20]
-    return [
-        {
-            "symbol": t["ticker"],
-            "price": t["day"].get("c", 0),
-            "change_pct": round(t.get("todaysChangePerc", 0), 2),
-            "volume": t["day"].get("v", 0),
-        }
-        for t in tickers
+    """Top movers using a curated watchlist via yfinance."""
+    watchlist = [
+        "NVDA", "AMD", "TSLA", "META", "MSFT", "AAPL", "GOOGL", "AMZN",
+        "PLTR", "COIN", "SMCI", "AVGO", "ARM", "MSTR", "HOOD", "SQ",
+        "SOFI", "RBLX", "SHOP", "NET", "CRWD", "SNOW", "DDOG", "MDB"
     ]
+    tickers = yf.download(watchlist, period="2d", interval="1d", progress=False, auto_adjust=True)
+    results = []
+    for symbol in watchlist:
+        try:
+            closes = tickers["Close"][symbol].dropna()
+            if len(closes) < 2:
+                continue
+            prev, last = float(closes.iloc[-2]), float(closes.iloc[-1])
+            change_pct = round((last - prev) / prev * 100, 2)
+            results.append({"symbol": symbol, "price": last, "change_pct": change_pct})
+        except Exception:
+            continue
+    results.sort(key=lambda x: x["change_pct"], reverse=(direction == "gainers"))
+    return results[:15]
 
 
 def get_ticker_snapshot(symbol: str) -> dict:
-    data = _polygon(f"/v2/snapshot/locale/us/markets/stocks/tickers/{symbol}")
-    t = data.get("ticker", {})
-    day = t.get("day", {})
-    prev = t.get("prevDay", {})
+    t = yf.Ticker(symbol)
+    info = t.info
+    hist = t.history(period="2d")
+    price = float(hist["Close"].iloc[-1]) if not hist.empty else info.get("regularMarketPrice", 0)
+    prev = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else price
+    change_pct = round((price - prev) / prev * 100, 2) if prev else 0
     return {
         "symbol": symbol,
-        "price": day.get("c", 0),
-        "open": day.get("o", 0),
-        "high": day.get("h", 0),
-        "low": day.get("l", 0),
-        "volume": day.get("v", 0),
-        "prev_close": prev.get("c", 0),
-        "change_pct": round(t.get("todaysChangePerc", 0), 2),
-        "vwap": day.get("vw", 0),
+        "price": price,
+        "open": float(hist["Open"].iloc[-1]) if not hist.empty else 0,
+        "high": float(hist["High"].iloc[-1]) if not hist.empty else 0,
+        "low": float(hist["Low"].iloc[-1]) if not hist.empty else 0,
+        "volume": int(hist["Volume"].iloc[-1]) if not hist.empty else 0,
+        "prev_close": prev,
+        "change_pct": change_pct,
     }
 
 
 def get_ticker_details(symbol: str) -> dict:
-    data = _polygon(f"/v3/reference/tickers/{symbol}")
-    r = data.get("results", {})
+    info = yf.Ticker(symbol).info
     return {
         "symbol": symbol,
-        "name": r.get("name"),
-        "market_cap": r.get("market_cap"),
-        "sector": r.get("sic_description"),
-        "description": r.get("description", "")[:500],
+        "name": info.get("longName"),
+        "market_cap": info.get("marketCap"),
+        "sector": info.get("sector"),
+        "description": (info.get("longBusinessSummary") or "")[:500],
     }
 
 
 def get_analyst_ratings(symbol: str) -> list[dict]:
-    """Recent analyst upgrades/downgrades from Polygon."""
-    data = _polygon("/v2/reference/analysts", {"ticker": symbol})
-    results = data.get("results", [])[:5]
-    return [
-        {
-            "analyst": r.get("analyst"),
-            "action": r.get("action"),
-            "rating": r.get("rating"),
-            "price_target": r.get("price_target"),
-            "date": r.get("date"),
-        }
-        for r in results
-    ]
+    try:
+        recs = yf.Ticker(symbol).recommendations
+        if recs is None or recs.empty:
+            return []
+        recent = recs.tail(5).reset_index()
+        return [
+            {
+                "firm": row.get("Firm", ""),
+                "action": row.get("Action", ""),
+                "rating": row.get("To Grade", ""),
+                "date": str(row.get("Date", "")),
+            }
+            for _, row in recent.iterrows()
+        ]
+    except Exception:
+        return []
 
 
 def get_premarket_movers() -> list[dict]:
-    """Pre-market snapshot — returns gainers sorted by change_pct."""
-    data = _polygon("/v2/snapshot/locale/us/markets/stocks/gainers", {"include_otc": False})
-    tickers = data.get("tickers", [])[:15]
-    return [
-        {
-            "symbol": t["ticker"],
-            "price": t.get("lastTrade", {}).get("p", 0),
-            "change_pct": round(t.get("todaysChangePerc", 0), 2),
-            "volume": t["day"].get("v", 0),
-        }
-        for t in tickers
-    ]
+    return get_market_movers("gainers")
