@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import json
 import anthropic
@@ -128,7 +131,5 @@ Be aggressive. Look for high-conviction setups.
 
 
 if __name__ == "__main__":
-    from dotenv import load_dotenv
-    load_dotenv()
     result = run_trading_cycle()
     print(f"\nCycle result: {json.dumps(result, default=str, indent=2)}")
