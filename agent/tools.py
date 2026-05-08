@@ -142,7 +142,12 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "is_market_open",
-        "description": "Check if the US stock market is currently open.",
+        "description": "Check if the US stock market regular session is currently open.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "get_market_session",
+        "description": "Returns current trading session: pre-market (4–9:30am ET), regular (9:30am–4pm ET), after-hours (4–8pm ET), or closed.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
@@ -212,6 +217,8 @@ def dispatch_tool(name: str, inputs: dict) -> str:
             return str(client.get_open_orders())
         case "is_market_open":
             return str(client.is_market_open())
+        case "get_market_session":
+            return str(client.get_market_session())
         case "get_market_movers":
             direction = inputs.get("direction", "gainers")
             return str(market.get_market_movers(direction))

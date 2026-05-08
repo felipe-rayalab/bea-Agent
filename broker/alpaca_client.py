@@ -60,7 +60,28 @@ class AlpacaClient:
             for o in orders
         ]
 
+    def is_extended_hours(self) -> bool:
+        """True during pre-market (4–9:30am ET) and after-hours (4–8pm ET)."""
+        et = pytz.timezone("America/New_York")
+        now = datetime.now(et)
+        if now.weekday() >= 5:
+            return False
+        t = now.hour * 60 + now.minute
+        pre_market = 4 * 60 <= t < 9 * 60 + 30
+        after_hours = 16 * 60 <= t < 20 * 60
+        return pre_market or after_hours
+
     def place_market_order(self, symbol: str, qty: float, side: str) -> dict:
+        # Alpaca doesn't support market orders in extended hours — use limit at mid+0.5%
+        if self.is_extended_hours():
+            quote = self.get_latest_quote(symbol)
+            mid = quote["mid"]
+            if side.lower() == "buy":
+                limit_price = round(mid * 1.005, 2)
+            else:
+                limit_price = round(mid * 0.995, 2)
+            return self.place_limit_order(symbol, qty, side, limit_price)
+
         order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
         req = MarketOrderRequest(
             symbol=symbol,
@@ -79,12 +100,14 @@ class AlpacaClient:
 
     def place_limit_order(self, symbol: str, qty: float, side: str, limit_price: float) -> dict:
         order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+        extended = self.is_extended_hours()
         req = LimitOrderRequest(
             symbol=symbol,
             qty=qty,
             side=order_side,
             time_in_force=TimeInForce.DAY,
             limit_price=limit_price,
+            extended_hours=extended,
         )
         order = self.trading.submit_order(req)
         return {
@@ -94,6 +117,7 @@ class AlpacaClient:
             "limit_price": limit_price,
             "side": order.side.value,
             "status": order.status.value,
+            "extended_hours": extended,
         }
 
     def close_position(self, symbol: str) -> dict:
@@ -137,3 +161,18 @@ class AlpacaClient:
     def is_market_open(self) -> bool:
         clock = self.trading.get_clock()
         return clock.is_open
+
+    def get_market_session(self) -> str:
+        """Returns: 'pre-market', 'regular', 'after-hours', or 'closed'."""
+        et = pytz.timezone("America/New_York")
+        now = datetime.now(et)
+        if now.weekday() >= 5:
+            return "closed"
+        t = now.hour * 60 + now.minute
+        if 4 * 60 <= t < 9 * 60 + 30:
+            return "pre-market"
+        if 9 * 60 + 30 <= t < 16 * 60:
+            return "regular"
+        if 16 * 60 <= t < 20 * 60:
+            return "after-hours"
+        return "closed"

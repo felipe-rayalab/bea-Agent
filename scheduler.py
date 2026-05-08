@@ -75,22 +75,22 @@ if __name__ == "__main__":
     et = pytz.timezone("America/New_York")
     scheduler = BlockingScheduler(timezone=et)
 
-    # Every 15 min on weekdays 9:00–15:45 ET
+    # Every 15 min on weekdays 4:00am–8:00pm ET (extended hours + regular)
     scheduler.add_job(
         guarded_cycle,
         "cron",
         day_of_week="mon-fri",
-        hour="9-15",
+        hour="4-19",
         minute="0,15,30,45",
         id="trading_cycle",
     )
 
-    # Pre-market scan at 9:00 AM ET
+    # Pre-market scan at 4:00 AM ET
     scheduler.add_job(
         pre_market_scan,
         "cron",
         day_of_week="mon-fri",
-        hour=9,
+        hour=4,
         minute=0,
         id="pre_market_scan",
     )
