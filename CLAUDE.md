@@ -21,7 +21,7 @@ Migrar a live en semana 2 si los resultados son satisfactorios.
 - **Broker**: Alpaca Markets (alpaca-py) — paper + live
 - **Datos real-time**: Yahoo Finance via `yfinance` (gratis, sin API key)
 - **Quotes exactos + históricos**: Alpaca Data API (incluido con la cuenta)
-- **Noticias / SEC / Insiders**: Financial Datasets API (free tier)
+- **Noticias**: Alpaca News API (incluido con la cuenta, sin costo extra)
 - **Dashboard**: Next.js 14 + Vercel (`web/`)
 - **Trade journal**: Upstash Redis (persiste entre sesiones CCR)
 - **Scheduler autónomo**: Rutina Anthropic Cloud, `0 8-23 * * 1-5` UTC = cada hora 4am–7pm ET
@@ -31,10 +31,10 @@ Migrar a live en semana 2 si los resultados son satisfactorios.
 | Fuente | Qué provee | API Key |
 |--------|-----------|---------|
 | Alpaca Data API | Quotes real-time, OHLCV histórico | Misma key del broker |
+| Alpaca News API | Noticias por ticker y mercado general | Misma key del broker |
 | Yahoo Finance (yfinance) | Movers, snapshots, earnings calendar, analyst ratings | No requiere |
-| Financial Datasets | Noticias con sentiment, SEC filings, insider trades | Sí (free tier) |
 
-> Polygon.io y EODHD fueron removidos — sus free tiers no incluyen snapshots ni earnings calendar.
+> Polygon.io, EODHD y Financial Datasets fueron removidos — free tiers con límites que rompían el ciclo.
 
 ## Compatibilidad
 
@@ -140,8 +140,15 @@ Momentum + event-driven:
 
 - Stop-loss automático al -15% por posición
 - Máximo 30% del portfolio en una posición
-- Máximo 3 posiciones abiertas simultáneamente
+- Máximo 10 posiciones abiertas simultáneamente
 - Extended hours: market orders se convierten automáticamente a limit en mid±0.5%
+
+## Lógica de rotación (agent/prompts.py)
+
+El agente evalúa posiciones existentes en cada ciclo y rota activamente:
+- Puntúa cada posición: ¿sigue activo el catalizador original? ¿hay noticias negativas?
+- Si encuentra una oportunidad con catalizador más fuerte, vende la posición más débil y compra la nueva
+- Permite operar aunque el cash sea bajo — la rotación no requiere cash libre
 
 ## Pasar a live trading
 
