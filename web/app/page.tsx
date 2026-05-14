@@ -134,8 +134,9 @@ function PortfolioChart({ history }: { history: Portfolio['history'] }) {
     equity: history.equity[i],
   }))
   const baseline = data[0]?.equity ?? 0
-  const min = Math.min(...data.map(d => d.equity)) * 0.999
-  const max = Math.max(...data.map(d => d.equity)) * 1.001
+  const equities = data.map(d => d.equity)
+  const min = Math.min.apply(null, equities) * 0.999
+  const max = Math.max.apply(null, equities) * 1.001
   const last = data[data.length - 1]?.equity ?? baseline
   const lineColor = last >= baseline ? '#34d399' : '#f87171'
   return (
@@ -179,7 +180,7 @@ function TradeRow({ trade }: { trade: Trade }) {
 
 function DayAccordion({ group, defaultOpen }: { group: DayGroup; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen ?? false)
-  const symbols = [...new Set(group.trades.map(t => t.symbol))].join(', ')
+  const symbols = Array.from(new Set(group.trades.map(t => t.symbol))).join(', ')
   const buys = group.trades.filter(t => t.action === 'buy').length
   const sells = group.trades.filter(t => t.action === 'sell').length
   const summary = [buys > 0 && `${buys} buy`, sells > 0 && `${sells} sell`].filter(Boolean).join(' · ')
@@ -210,7 +211,7 @@ function DayAccordion({ group, defaultOpen }: { group: DayGroup; defaultOpen?: b
 function LastCycleStatus({ lastCycle }: { lastCycle: LastCycle }) {
   const traded = lastCycle.actions_taken?.length > 0
   const symbols = traded
-    ? [...new Set(lastCycle.actions_taken.map((a: any) => a.symbol ?? a.inputs?.symbol))].join(', ')
+    ? Array.from(new Set(lastCycle.actions_taken.map((a: any) => a.symbol ?? a.inputs?.symbol))).join(', ')
     : null
   const timeAgo = (() => {
     const diff = Date.now() - new Date(lastCycle.timestamp).getTime()
