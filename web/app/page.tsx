@@ -85,7 +85,8 @@ function groupTradesByDay(trades: Trade[]): DayGroup[] {
   const map: Record<string, Trade[]> = {}
   for (const t of trades) {
     const key = new Date(t.logged_at).toISOString().slice(0, 10)
-    ;(map[key] ??= []).push(t)
+    if (!map[key]) map[key] = []
+    map[key].push(t)
   }
   return Object.entries(map)
     .sort(([a], [b]) => b.localeCompare(a))
